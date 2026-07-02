@@ -64,6 +64,15 @@ function loadBaselineManifest() {
   return JSON.parse(fs.readFileSync(p, 'utf8'));
 }
 
+// v2.1.25 (#128, ADR 0014): machine-readable deprecation registry replaces
+// live stub .md tombstones. Rooted at PROJECT_ROOT so --project-root fixtures
+// get their own registry (or none — absent file means no tombstones).
+function loadDeprecationRegistry() {
+  const p = path.join(PROJECT_ROOT, 'test', 'contract', 'deprecation-registry.json');
+  if (!fs.existsSync(p)) return {};
+  return JSON.parse(fs.readFileSync(p, 'utf8'));
+}
+
 function runL1Skills() {
   const skillsDir = path.join(PROJECT_ROOT, 'skills');
   const baselineSkillsDir = path.join(BASE_DIR, 'skills');
@@ -156,13 +165,20 @@ function runL1MCP() {
 function runL1Hooks() {
   const current = collectHooks({ persist: false, projectRoot: PROJECT_ROOT });
   const baseline = loadBaselineManifest().hooks;
+  // Additions-tolerant counts (ENH-371): every other L1 surface (skills/agents/MCP)
+  // guards by per-identity existence and silently accepts additions — a NEW hook event
+  // must not break a frozen baseline compare any more than a new skill does. The
+  // per-event existence loop below is the real removal guard; the count checks only
+  // fail on a NET DECREASE. This also honors the LTS-frozen governance in
+  // docs/06-guide/contract-baseline-rollforward.guide.md §3.1 (LTS v2.1.9 is edited
+  // only at a major LTS transition, never for a routine hook addition).
   assert(
-    current.events === baseline.events,
-    `L1-HK FAIL hook events count changed (${current.events} !== ${baseline.events})`
+    current.events >= baseline.events,
+    `L1-HK FAIL hook events count decreased (${current.events} < ${baseline.events}) — additions OK, removals fail`
   );
   assert(
-    current.blocks === baseline.blocks,
-    `L1-HK WARN hook blocks count changed (${current.blocks} !== ${baseline.blocks}) — block additions OK, removals fail`
+    current.blocks >= baseline.blocks,
+    `L1-HK FAIL hook blocks count decreased (${current.blocks} < ${baseline.blocks}) — block additions OK, removals fail`
   );
   // Verify each baseline event still exists
   const baselineEventsFile = path.join(BASE_DIR, 'hook-events.json');
@@ -201,9 +217,15 @@ function runL4Deprecation() {
     }
   }
   // Agents — Skills 패턴과 동일하게 deprecatedIn frontmatter 우회 지원 (v2.1.17)
+  // v2.1.25 (#128, ADR 0014): a deprecation-registry tombstone with deprecatedIn
+  // is equivalent to a live stub — stubs were removed off the prompt surface.
+  const registry = loadDeprecationRegistry();
   const currentAgents = collectAgents({ persist: false, projectRoot: PROJECT_ROOT });
+  // collectAgents returns { count: 0 } (no names) when agents/ is absent —
+  // e.g. fixture repos; treat as "no current agents" instead of crashing.
+  const currentAgentNames = currentAgents.names || [];
   for (const agentName of manifest.agents.names) {
-    if (!currentAgents.names.includes(agentName)) {
+    if (!currentAgentNames.includes(agentName)) {
       const baselineFile = path.join(BASE_DIR, 'agents', `${agentName}.json`);
       const baselineMeta = fs.existsSync(baselineFile)
         ? JSON.parse(fs.readFileSync(baselineFile, 'utf8'))
@@ -217,6 +239,10 @@ function runL4Deprecation() {
       if (fs.existsSync(agentMd)) {
         const fm = parseFrontmatter(fs.readFileSync(agentMd, 'utf8'));
         deprecated = !!fm.deprecatedIn;
+      }
+      if (!deprecated) {
+        const tombstone = (registry.agents || {})[agentName];
+        deprecated = !!(tombstone && tombstone.deprecatedIn);
       }
       assert(
         deprecated,
@@ -288,4 +314,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { runL1Skills, runL1Agents, runL1MCP, runL1Hooks, runL4Deprecation };
+module.exports = { runL1Skills, runL1Agents, runL1MCP, runL1Hooks, runL4Deprecation, loadDeprecationRegistry };

@@ -16,7 +16,7 @@ Context Engineering:
    to provide LLMs with optimal context for inference"
 ```
 
-bkit is a **practical implementation of Context Engineering**, providing a systematic context management system for Claude Code with 43 skills, 36 agents, 21 hook events (24 blocks), 142 lib modules across 16 subdirs (Clean Architecture 4-Layer with 7 Port↔Adapter pairs), 49 scripts, and 2 MCP servers with 16 tools. See [CHANGELOG.md](../../CHANGELOG.md) for version history.
+bkit is a **practical implementation of Context Engineering**, providing a systematic context management system for Claude Code with 44 skills, 34 agents, 22 hook events (25 blocks), 194 lib modules across 22 subdirs (Clean Architecture 4-Layer with 8 Port↔Adapter pairs), 62 scripts, and 2 MCP servers with 19 tools. See [CHANGELOG.md](../../CHANGELOG.md) for version history.
 
 ---
 
@@ -35,7 +35,7 @@ bkit is a **practical implementation of Context Engineering**, providing a syste
 │                                     │                                        │
 │                                     ▼                                        │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │                  21-Event Hook System (6 Layers)                       │  │
+│  │                  22-Event Hook System (6 Layers)                       │  │
 │  │                                                                        │  │
 │  │  L1: hooks.json ─→ SessionStart, UserPromptSubmit, PreCompact,         │  │
 │  │                     PostCompact, Stop, StopFailure, TaskCompleted,     │  │
@@ -150,15 +150,16 @@ bkit is a **practical implementation of Context Engineering**, providing a syste
 
 ---
 
-## Behavioral Rules Layer (36 Agents)
+## Behavioral Rules Layer (34 Agents)
 
 ### Model Selection Strategy
 
 | Model | Count | Agents | Characteristics |
 |-------|:-----:|--------|-----------------|
-| **opus** | 11 | cto-lead, code-analyzer, design-validator, gap-detector, enterprise-expert, infra-architect, security-architect, pm-lead, bkit-impact-analyst, cc-version-researcher, self-healing | Strategic leadership, complex analysis, 1M context |
-| **sonnet** | 19 | bkend-expert, pdca-iterator, pipeline-guide, starter-guide, product-manager, frontend-architect, qa-strategist, pm-discovery, pm-strategy, pm-research, pm-prd, pm-lead-skill-patch, skill-needs-extractor, 6 pdca-eval-* agents | Execution, guidance, iteration |
-| **haiku** | 2 | qa-monitor, report-generator | Fast monitoring, document generation |
+| **fable** | 6 | cto-lead, sprint-orchestrator, sprint-master-planner, pm-lead, qa-lead, sprint-qa-flow | Long-horizon orchestration (leads) + sprint dataFlow verifier — requires CC ≥ v2.1.170 |
+| **opus** | 10 | security-architect, code-analyzer, self-healing, infra-architect, enterprise-expert, bkit-impact-analyst, cc-version-researcher, gap-detector, design-validator, pdca-iterator | Deep reasoning & security + high-frequency PDCA verifiers (v2.1.26 cost retune fable→opus) |
+| **sonnet** | 16 | bkend-expert, frontend-architect, pipeline-guide, pm-discovery, pm-lead-skill-patch, pm-prd, pm-research, pm-strategy, product-manager, qa-debug-analyst, qa-strategist, qa-test-generator, qa-test-planner, skill-needs-extractor, sprint-report-writer, starter-guide | Execution, guidance, iteration |
+| **haiku** | 2 | qa-monitor, report-generator | Fast monitoring, document generation (6 pdca-eval-* tombstones removed per ADR 0014) |
 
 ### Agent Frontmatter (v2.0.0 native)
 

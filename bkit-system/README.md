@@ -4,6 +4,8 @@
 >
 > **Version history is maintained in a single source of truth**: see [CHANGELOG.md](../CHANGELOG.md) for the full release history (v1.0.0 → v2.1.13).
 >
+> Post-v2.1.13 maintenance releases (v2.1.14 → v2.1.26, latest: v2.1.26 — MCP manifest relocation fixing the `/plugin` "MCP failed" defect [inline `mcpServers` in plugin.json, root `.mcp.json` deleted] + test-state isolation refactor + ADR 0015/eval SOP + Fable cost retune [high-frequency verifiers gap-detector/design-validator/pdca-iterator fable→opus → 6 fable / 10 opus / 16 sonnet / 2 haiku matrix]) are tracked in CHANGELOG.md; the component counts below reflect the current tree.
+>
 > Current release highlights (v2.1.13 over v2.1.12):
 > - **Sprint Management (NEW v2.1.13 GA)**: 8-phase meta-container (`prd → plan → design → do → iterate → qa → report → archived`) — 16 sub-actions, 4 Auto-Pause Triggers (QUALITY_GATE_FAIL/ITERATION_EXHAUSTED/BUDGET_EXCEEDED/PHASE_TIMEOUT), Trust Level scope L0-L4 via `SPRINT_AUTORUN_SCOPE`, 7-Layer S1 dataFlowIntegrity QA, 4 sprint agents, 1 skill, 7 templates, 13 application-layer modules, 9 infrastructure adapters, 3 MCP tools, 1 L3 contract test (8 SC-01~08), 2 Korean guides, 2 ADRs (0006 + 0007)
 > - **Tech Debt Cleanup**: net −2,333 LOC removed (7 legacy `templates/infra/*` removed)
@@ -56,7 +58,7 @@ bkit is a practical implementation of **Context Engineering**. Context Engineeri
 │                                 ▼                               │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │                Unified Hook System (v1.4.4)               │  │
-│  │  L1: hooks.json (21 events - all hooks centralized)      │  │
+│  │  L1: hooks.json (22 events - all hooks centralized)      │  │
 │  │  L2: Unified Scripts (stop, bash-pre, write-post, etc.)  │  │
 │  │  L3: Agent Frontmatter (constraints only)                │  │
 │  │  L4: Description Triggers (keyword matching)             │  │
@@ -188,7 +190,7 @@ lib/
 │         │                   │                   │               │
 │         ▼                   ▼                   ▼               │
 │  ┌──────────────────────────────────────────────────────┐      │
-│  │                    Hooks Layer (21 events)            │      │
+│  │                    Hooks Layer (22 events)            │      │
 │  │  SessionStart │ UserPromptSubmit │ PreToolUse │       │      │
 │  │  PostToolUse  │ PreCompact │ Stop │ SubagentStart │   │      │
 │  │  SubagentStop │ TaskCompleted │ TeammateIdle │        │      │
@@ -211,9 +213,9 @@ lib/
 | Component | Count | Role | Details |
 |-----------|-------|------|---------|
 | Skills | 43 | Domain knowledge + Slash commands (v2.1.11 added bkit-evals, bkit-explore, pdca-watch, pdca-fast-track) | [[components/skills/_skills-overview]] |
-| Agents | 36 | Specialized task execution (13 opus / 21 sonnet / 2 haiku) | [[components/agents/_agents-overview]] |
+| Agents | 34 | Specialized task execution (6 fable / 10 opus / 16 sonnet / 2 haiku; v2.1.26 verifier cost retune; 6 pdca-eval-* registry-tombstoned per ADR 0014) | [[components/agents/_agents-overview]] |
 | Commands | DEPRECATED | Migrated to Skills (v1.4.4) | - |
-| Hooks | 21 events (24 blocks) | Event-based triggers (unified) | [[components/hooks/_hooks-overview]] |
+| Hooks | 22 events (25 blocks) | Event-based triggers (unified) | [[components/hooks/_hooks-overview]] |
 | Scripts | 49 | Actual logic execution | [[components/scripts/_scripts-overview]] |
 | Lib | 22 subdirectories, 190 modules | Clean Architecture 4-Layer with 7 Port↔Adapter pairs (Domain / Application / Infrastructure / Presentation) | See [CHANGELOG](../CHANGELOG.md#architecture-snapshot) |
 | Evals | 28 | Skill evaluation definitions | Skill Creator + A/B Testing |
@@ -244,7 +246,7 @@ lib/
 bkit triggers occur across 6 layers:
 
 ```
-Layer 1: hooks.json (Global) → 21 events (24 blocks): SessionStart, UserPromptSubmit,
+Layer 1: hooks.json (Global) → 22 events (25 blocks): SessionStart, UserPromptSubmit,
                                 PreCompact, PostCompact, PreToolUse, PostToolUse,
                                 Stop, StopFailure, SessionEnd, SubagentStart, SubagentStop,
                                 TaskCompleted, TeammateIdle, Notification, ConfigChange,
@@ -372,10 +374,10 @@ bkit v1.6.0 integrates CC 2.1.0 Skills 2.0 features:
 | Component | Count |
 |-----------|-------|
 | Skills | 43 (v2.1.11 added bkit-evals, bkit-explore, pdca-watch, pdca-fast-track) |
-| Agents | 36 (13 opus / 21 sonnet / 2 haiku) |
+| Agents | 34 (6 fable / 10 opus / 16 sonnet / 2 haiku; v2.1.26 verifier cost retune; 6 pdca-eval-* registry-tombstoned per ADR 0014) |
 | Lib Modules | 190 across 22 subdirectories |
 | Scripts | 49 |
-| Hook Events | 21 (24 blocks) |
+| Hook Events | 22 (25 blocks) |
 | Templates | 18 |
 | Output Styles | 4 |
 | MCP Servers | 2 (bkit-pdca, bkit-analysis; 16 tools registered via `lib/infra/mcp-port-registry.js`) |

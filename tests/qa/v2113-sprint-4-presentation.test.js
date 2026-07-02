@@ -557,10 +557,14 @@ const LANG_REGEX = {
     //   sprint-doc-scanner.adapter.js, matrix-sync.adapter.js
     // index.js is allowed to be extended in Sprint 5 (R2: 3 new factory exports added).
     // Sprint 5 may also add new adapter files (gap-detector/auto-fixer/data-flow-validator).
+    // v2.1.26 amendment (design I-12, test-isolation guard): sprint-telemetry.adapter.js
+    // was deliberately extended so `emit` honors an explicitly injected projectRoot
+    // (audit writes were leaking to the developer's real .bkit from tests). It is
+    // therefore removed from this lock — governance recorded in
+    // docs/02-design/features/v2126-issue-response.design.en.md §4 I-12 + CHANGELOG.
     const sprint3Baseline = [
       'lib/infra/sprint/sprint-paths.js',
       'lib/infra/sprint/sprint-state-store.adapter.js',
-      'lib/infra/sprint/sprint-telemetry.adapter.js',
       'lib/infra/sprint/sprint-doc-scanner.adapter.js',
       'lib/infra/sprint/matrix-sync.adapter.js',
     ];
@@ -574,19 +578,21 @@ const LANG_REGEX = {
     assert.equal(out, '');
   });
 
-  test('INV-05: hooks/hooks.json 21 events 24 blocks invariant', () => {
+  test('INV-05: hooks/hooks.json 22 events 25 blocks invariant', () => {
     // v2.1.14 Sub-Sprint 6 Observation: the original Sprint 4 invariant
     // froze hooks.json against structural change. Version-string bumps
     // inside the `description` field are SSoT-driven (BKIT_VERSION sync)
     // and explicitly allowed — assert event/block counts directly rather
     // than relying on a clean `git diff --stat`.
+    // v2.1.27 (ENH-371): +UserPromptExpansion event/block for slash-command
+    // orchestrator reachability (issue #132) → 21→22 events, 24→25 blocks.
     const data = JSON.parse(require('fs').readFileSync(
       require('path').join(PLUGIN_ROOT, 'hooks/hooks.json'), 'utf8'));
     const events = Object.keys(data.hooks || {});
     let totalBlocks = 0;
     for (const ev of events) totalBlocks += (data.hooks[ev] || []).length;
-    assert.equal(events.length, 21, 'hooks.json must declare 21 events');
-    assert.equal(totalBlocks, 24, 'hooks.json must declare 24 total blocks');
+    assert.equal(events.length, 22, 'hooks.json must declare 22 events');
+    assert.equal(totalBlocks, 25, 'hooks.json must declare 25 total blocks');
   });
 
   // ─────────────────────────────────────────────────────────────────────────
