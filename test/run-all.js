@@ -326,8 +326,14 @@ const CATEGORIES = {
       'regression/gap-detector-unmeasured.test.js',
       // v2.1.37: permission-mode awareness + the five defects coupled to it.
       'regression/enh-466-473-permission-mode.test.js',
+      // QA pipeline wiring — four silent breaks between qa-lead and the qa gate.
+      'regression/qa-pipeline-wiring.test.js',
+      // QA follow-ups — the stdin handoff, QA_RETRY, and three agent/skill gaps.
+      'regression/qa-followups.test.js',
+      // The last three Stop handlers that regexed the payload envelope.
+      'regression/stop-handler-extraction.test.js',
     ],
-    expected: 610,
+    expected: 688,
   },
   performance: {
     name: 'Performance Tests',

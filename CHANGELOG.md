@@ -5,6 +5,201 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.38] - 2026-08-17
+
+### Fixed — QA pipeline wiring
+
+Four breaks between the QA agents and the qa quality gate. Each was silent: the
+QA phase printed "QA Phase completed" while the value it exists to produce never
+reached the gate. Found by reading the qa-lead → qa-phase-stop → gate-manager →
+state-machine path end to end rather than from a failing run, because none of
+these can produce a failing run — they produce a run that looks fine.
+
+- **QA metric collection crashed on its first line and swallowed the error.**
+  `readStdinSync()` returns the *parsed* hook payload — an object — and
+  `scripts/qa-phase-stop.js` assigned it to `qaOutput` and called `.match()` on
+  it. TypeError on M11, caught by the handler's own try/catch, and M11–M15 were
+  never written on any run since v2.1.1. Adds `readHookText()` to
+  `lib/core/io.js`, which resolves the payload to the assistant's reported text
+  via `transcript_path` (text blocks only — `thinking` and `tool_use` would
+  produce false metric hits) and always returns a string.
+
+- **The qa gate required a metric that no metric ID produced.** `gate-manager`'s
+  `qa` gate has listed `qaCriticalCount === 0` as a pass condition since v2.1.1,
+  but `METRIC_ID_TO_GATE_NAME` had no entry mapping to that name, and
+  `_evaluateCondition` treats an absent metric as unsatisfied. `passCount <
+  totalPass` therefore held on every run, so the gate could never return `pass`
+  and QA could not advance to Report regardless of test results — `retry` and
+  `fail` both map to `QA_FAIL`. Adds **M16 (QA Critical Count)** and collects it
+  in the qa Stop handler. The gate is unchanged; the missing piece was the
+  metric.
+
+- **The state machine was handed a blank context.** `scripts/unified-stop.js`
+  built its context with `createContext()`, which carries no QA fields at all,
+  so `guardQaPass` and `guardQaMaxRetryReached` both evaluated against
+  `undefined` — QA_PASS could not fire, and neither could the max-retry escape
+  hatch, leaving a feature able to loop `qa → act` indefinitely. The
+  `recordQaResult` action then wrote those blanks back to pdca-status as nulls,
+  erasing measurements. Switches to `loadContext()` (falling back to
+  `createContext`) and extends `loadContext` to hydrate the QA slice, reading
+  quality-metrics first and pdca-status second. Adds
+  `guardrails.loopBreaker.maxQaRetries` to `bkit.config.json` so the retry
+  ceiling is a real, editable setting rather than an inline default.
+
+- **Chrome MCP detection read an environment variable Claude Code never sets.**
+  Both `lib/qa/chrome-bridge.js` and a duplicate copy in
+  `lib/pdca/state-transitions.js` tested `process.env.MCP_SERVERS`, which is
+  always empty under Claude Code, so `chromeAvailable` was false on 100% of runs
+  and L3/L4/L5 were skipped every time — described in qa-lead's own docs as
+  normal fallback, which is how a permanently dark half of the test matrix
+  passed for a feature. Detection is now layered, most authoritative first: a
+  runtime probe qa-lead records in `.bkit/runtime/qa-capabilities.json` (only the
+  agent holds the Chrome MCP tools, so only the agent can observe whether they
+  answer), a `BKIT_CHROME_MCP=1|0` operator override, `MCP_SERVERS` for
+  back-compat, then MCP config files. The duplicate detector now delegates to the
+  bridge instead of drifting alongside it.
+
+Regression coverage: `test/regression/qa-pipeline-wiring.test.js` (23 TC),
+registered in `test/run-all.js`.
+
+### Fixed — QA follow-ups
+
+The rest of the same audit, plus one root cause that only surfaced while fixing
+the first four.
+
+- **No Stop handler had ever seen its hook payload.** `unified-stop.js` reads the
+  payload with `readStdinBounded`, which destroys stdin on resolve (Issue #139),
+  and then dispatches the per-agent handler with `require()` — same process,
+  stdin already drained. All six metric-collecting handlers are self-executing
+  and call `readStdinSync()` for themselves, so the parent saw the payload and
+  the child saw `{}`. Measured with a two-file harness, not inferred. This is
+  the reason no handler ever had a `transcript_path` to read, and it means the
+  C-1 fix above was necessary but not sufficient on its own. `lib/core/io.js`
+  now remembers the payload the process read and hands it to later readers; one
+  hook process handles one event, so there is no staleness to reason about.
+
+- **Two more handlers regexed their own guidance string.** `analysis-stop.js` and
+  `qa-stop.js` both `require` `readStdinSync` and never call it, matching their
+  metric patterns against the `message` constant declared at the top of the same
+  file. Those patterns cannot match it, so M2 was written at its 75 baseline and
+  M5 at 0 — "no errors found" — on every run regardless of what code-analyzer or
+  qa-monitor reported.
+
+- **`QA_RETRY` was defined but never emitted.** `act → qa` is the only route back
+  into QA after a failure, and `unified-stop` mapped the act phase to
+  `ANALYZE_DONE` unconditionally, so a QA failure rejoined the ordinary
+  `act → check` loop and never returned to the phase that rejected it. The
+  transition, its retry counter, and its `initQaPhase` action were all
+  unreachable. `QA_FAIL` now records the debt via a new `markQaRetryPending`
+  action and unified-stop pays it on the next act completion. Separately,
+  `initQaPhase` read `ctx.qaRetryCount || 0` and wrote the same value back — the
+  counter never moved, so `guardQaMaxRetryReached` could not fire however many
+  times a feature went round. It now advances on `QA_RETRY` and only on it.
+
+- **qa-lead never dispatched qa-monitor.** It is declared in the agent's tools and
+  named in its description as one of four coordinated agents, but no step called
+  it, so the QA phase reported test outcomes with no runtime log evidence behind
+  them. Added as Phase 3.5.
+
+- **qa-test-planner could not write the test plan it exists to produce.** `Write`
+  was on its `disallowedTools` list while its stated role was producing "test
+  plan documents", so the plan survived only as conversational text — and
+  qa-lead ran the planner and the generator concurrently anyway, leaving the
+  generator to write tests against a plan that did not exist yet. The planner now
+  writes `docs/05-qa/{feature}.test-plan.md`, the generator reads that path and
+  stops if it is missing, and qa-lead sequences the two. `Bash` stays denied.
+
+- **The pre-release scanner scanned bkit, not the caller's project.**
+  `pre-release-check.sh` set `PROJECT_ROOT` from its own location and used it for
+  both loading scanner code and choosing what to scan, so a user running it got a
+  report about bkit's source. Split into `BKIT_ROOT` (code) and `SCAN_ROOT`
+  (target, defaulting to `$CLAUDE_PROJECT_DIR`), with `--root DIR` and a `--self`
+  opt-in for the old behaviour. `skills/qa-phase/SKILL.md` invoked it by relative
+  path, which resolves to nothing where the skill actually runs — now
+  `${PLUGIN_ROOT}`-absolute — and documented four scanners where five ship;
+  `wiring` was missing from both the table and the report template.
+
+Regression coverage: `test/regression/qa-followups.test.js` (27 TC), registered
+in `test/run-all.js`.
+
+### Fixed — the last three Stop handlers read the payload envelope
+
+`gap-detector-stop.js`, `iterator-stop.js` and `pdca-skill-stop.js` all built
+their match target as `typeof input === 'string' ? input : JSON.stringify(input)`
+— the hook envelope (`hook_event_name`, `session_id`, `transcript_path`, `cwd`),
+never the agent's report. Delivering a real payload to these handlers (previous
+entry) was necessary but not sufficient: the envelope carries none of the signals
+they look for, and each is now asserted not to.
+
+- **gap-detector-stop** could never extract a match rate. Its unmeasured handling
+  was already correct (v2.1.34), so the effect was not a wrong number but a
+  permanent absence — M1 and M4 were never collected from the analysis itself.
+
+- **iterator-stop** matched its completion, max-iteration, improvement and
+  changed-files patterns against the envelope, so all four were permanently
+  false and branch selection fell entirely to numeric fallbacks — the iterator's
+  own account of what it did was never read. Its `featureStatus?.matchRate || 0`
+  fallback also fabricated a measurement, and `isMeasured(0)` is `true`, so the
+  fabricated zero passed as a real reading into the M9 efficiency calculation
+  where `improvement = 0 - prevMatchRate` recorded a regression that never
+  happened. Now routed through `lib/quality/match-rate`, matching what
+  gap-detector-stop already does; threshold comparisons go through a measured
+  guard, and user-facing text renders "not measured" instead of `null%`.
+
+- **pdca-skill-stop** matched `pdca (plan|design|…)` against the envelope, so
+  `action` was always `null` — and `null` disables most of the handler: the PDCA
+  status update, the auto-transition, the executive summary, and the M8/M10
+  metrics are all gated on it. Now falls back to the phase recorded in
+  `features[…].phase` when the text is silent. Deliberately not
+  `status.currentPhase`: that key was retired by the v3 migration, and reading it
+  returns `undefined` without throwing, which is the exact failure
+  `test/contract/state-schema-keys.test.js` was written to catch.
+
+Regression coverage: `test/regression/stop-handler-extraction.test.js` (28 TC),
+registered in `test/run-all.js`.
+
+### Fixed — the live hook harness could not exercise the task pair
+
+`test/qa-harness-full-live.js` drove `TaskCreated` / `TaskCompleted` with a
+`TaskCreate` + `TaskUpdate` prompt, and on Claude Code v2.1.233 both events came
+back dead. They are not dead. **v2.1.233 withdrew the Todo/Task tool family** —
+`TaskCreate`, `TaskGet`, `TaskUpdate`, `TaskList`, `TodoWrite` — from Opus 4.8 /
+Sonnet 5 / Fable 5 / Mythos 5+, keeping it for Haiku;
+`CLAUDE_CODE_ENABLE_TODO_TOOLS=1` restores it. With no tool to call, a live hook
+reads as a dead one.
+
+Isolated against the dispatch ledger, not against what a model says it has: the
+four isolation flags (`--setting-sources ''`, `--strict-mcp-config`,
+`--permission-mode`, `--no-session-persistence`) were bisected one at a time and
+none of them moved the result, while the same trigger under the **full** flag set
+fires both hooks with the variable set on the default model, and fires unset on
+Haiku. Model self-reports of "which tools do you have" contradicted the ledger in
+both directions, which is why the ledger is what this harness believes.
+
+The task trigger now sets that variable, keeping the harness on the model users
+actually run. Live hooks went 21/23 → **23/23** with the isolation intact, so
+`LRF-8` — the floor that refuses to let a once-observed event be relaid as
+"unverified" — is satisfied by evidence rather than by lowering the floor.
+
+Not fixed here, and tracked with the CC-version response instead: on v2.1.233 a
+default-model user has no `TaskCreate`, so bkit's own `TaskCreated` hook and the
+four `SKILL.md` files that instruct the model to call it are inert for them.
+
+### Changed — docs synchronised with the code
+
+- `metrics-collector` has shipped M11–M15 since v2.1.1 and M16 since this
+  release, while `bkit-system/philosophy/` still described **ten** metrics — and
+  described a *different* ten: its M1 was "Plan accuracy" where the code's M1 is
+  Match Rate, so a reader matching a metric ID against a runtime value was
+  reading two unrelated lists. The table is now generated from `METRIC_SPECS`.
+- Note for readers: three separate M-numbered systems coexist and only the
+  metric IDs changed here — `METRIC_SPECS` M1–M16 (metric IDs), the
+  `docs/reference/quality-gates-m1-m10.md` phase-gate catalog, and the
+  `README-FULL.md` §5 gate table. The catalog and the §5 table are untouched.
+- Version strings advanced across the five-location invariant plus
+  `marketplace.json`, and the component inventory in `CUSTOMIZATION-GUIDE.md`
+  was re-stamped with the release it was measured in.
+
 ## [2.1.37] - 2026-08-15
 
 > **One-Liner (EN)**: A Claude Code plugin that verifies AI-generated code against its own design specs.
